@@ -104,12 +104,17 @@ Abre la URL que imprima Vite (normalmente `http://localhost:5173`).
 cd e2e
 npm install
 npx playwright install chromium   # solo la primera vez
-VITE_BACKEND_URL=http://localhost:8081 npx playwright test
+VITE_BACKEND_URL=http://localhost:8081 npx playwright test offline-sync.spec.ts receipts.spec.ts retry-idempotency.spec.ts
 ```
 
 Corre 4 escenarios de principio a fin contra el backend y ERPNext reales:
 captura offline, sincronización automática, recepción parcial/total, y
 reintentos sin duplicados.
+
+`e2e/evidence-capture.spec.ts` es un archivo aparte: no verifica nada, solo
+genera las capturas de `evidencias/` para `Evidencias.pdf` (necesita además
+`ERPNEXT_ADMIN_PASSWORD=<la de infra/.env>`). No lo incluyas en una corrida
+normal de pruebas.
 
 ## Seguridad
 
