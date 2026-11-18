@@ -1,0 +1,73 @@
+import { db } from './schema';
+import type { LocalDocumentLine, LocalPurchaseDocument } from './types';
+
+export interface OrderLineInput {
+  itemRef: string;
+  quantity: number;
+}
+
+function toLines(inputs: OrderLineInput[]): LocalDocumentLine[] {
+  return inputs.map((line) => ({
+    itemRef: line.itemRef,
+    quantity: line.quantity,
+    warehouseRef: null,
+    sourceOrderLineRef: null,
+  }));
+}
+
+export function listLocalOrders(): Promise<LocalPurchaseDocument[]> {
+  return db.localPurchaseDocuments.where('documentType').equals('purchase_order').toArray();
+}
+
+export function getLocalOrder(localId: string): Promise<LocalPurchaseDocument | undefined> {
+  return db.localPurchaseDocuments.get(localId);
+}
+
+// idempotencyKey is generated exactly once here and never regenerated on edit or retry
+// (FR-007/FR-008, data-model.md validation rules) — this is the only place a new key is made.
+export async function createLocalOrder(
+  supplierRef: string,
+  lines: OrderLineInput[],
+): Promise<LocalPurchaseDocument> {
+  const now = new Date().toISOString();
+  const document: LocalPurchaseDocument = {
+    localId: crypto.randomUUID(),
+    documentType: 'purchase_order',
+    idempotencyKey: crypto.randomUUID(),
+    syncStatus: 'pending',
+    erpnextName: null,
+    erpnextStatus: null,
+    errorMessage: null,
+    supplierRef,
+    purchaseOrderRef: null,
+    lines: toLines(lines),
+    createdAt: now,
+    updatedAt: now,
+  };
+  await db.localPurchaseDocuments.add(document);
+  return document;
+}
+
+// Edits the local draft in place, preserving idempotencyKey/localId/erpnextName. A document
+// that previously failed moves back to 'pending' on edit (data-model.md: "usuario corrige y
+// reintenta"), so the corrected version is the one offered to the queue next.
+export async function updateLocalOrder(
+  localId: string,
+  supplierRef: string,
+  lines: OrderLineInput[],
+): Promise<void> {
+  const existing = await db.localPurchaseDocuments.get(localId);
+  if (!existing) throw new Error(`Local order not found: ${localId}`);
+  await db.localPurchaseDocuments.update(localId, {
+    supplierRef,
+    lines: toLines(lines),
+    updatedAt: new Date().toISOString(),
+    syncStatus: existing.syncStatus === 'failed' ? 'pending' : existing.syncStatus,
+  });
+}
+
+// Discard only ever removes a *local* capture (FR-004); callers are responsible for the
+// explicit confirmation step before calling this.
+export async function discardLocalOrder(localId: string): Promise<void> {
+  await db.localPurchaseDocuments.delete(localId);
+}

@@ -104,3 +104,65 @@ anterior.
 
 **Alternatives considered**: Pila Docker Compose separada: descartada en
 Clarify por consumo de recursos innecesario en una sola máquina.
+
+## Versiones elegidas (Fase 3, verificación empírica)
+
+**Decision**: `frappe/erpnext:v15.47.0` (ERPNext/Frappe v15, línea estable
+activamente mantenida al momento de este proyecto) y `mariadb:10.6`
+(`10.6.28-MariaDB`, el mínimo definido en este documento para soportar GTID
+por completo). Ambas imágenes se descargaron y probaron localmente contra
+Docker Desktop (Windows) antes de construir el Compose definitivo.
+
+**Rationale**: v15.47.0 ya estaba disponible localmente y es una release
+oficial estable (existen parches más recientes dentro de la misma línea
+v15, pero no aportan nada relevante para el alcance de este laboratorio);
+mariadb:10.6 es exactamente la versión mínima que este documento ya había
+fijado como objetivo, reduciendo el riesgo de incompatibilidades de sintaxis
+frente a versiones más nuevas (11.x) sin verificar.
+
+## Desviaciones encontradas al desplegar contra la versión real (Fase 3)
+
+Estas tres desviaciones se descubrieron ejecutando el laboratorio completo
+contra `frappe/erpnext:v15.47.0` y `mariadb:10.6`; el enfoque se ajustó en
+los scripts de `infra/scripts/`, no se forzó nada contra la evidencia real:
+
+1. **Maestros de UOM/Item Group/Supplier Group ausentes tras `bench
+   new-site --install-app erpnext`**: ese comando solo ejecuta el hook
+   `after_install` de ERPNext; los registros que normalmente crea el Setup
+   Wizard (p. ej. `Item Group "All Item Groups"`, UOM `"Nos"`,
+   `Supplier Group "All Supplier Groups"`) NUNCA se crean si nadie completa
+   el wizard en el navegador. Como este laboratorio es desatendido, no hay
+   wizard. **Ajuste**: `infra/scripts/seed-demo-data.sh` llama
+   explícitamente a
+   `erpnext.setup.setup_wizard.operations.install_fixtures.install(country=...)`
+   (la misma función que invoca el wizard) antes de crear la Company, el
+   Warehouse, los Suppliers y los Items, si `"All Item Groups"` aún no
+   existe.
+2. **`generate_keys(user)` de Frappe devuelve un `dict`, no un `str`**: en
+   esta versión, `frappe.core.doctype.user.user.generate_keys` retorna
+   `{"api_secret": "..."}`, no el secreto como cadena directa. **Ajuste**:
+   `infra/scripts/create-integration-user.sh` extrae `["api_secret"]` del
+   resultado antes de imprimirlo.
+3. **`api_key`/`api_secret` son campos `permlevel=1`; sin `commit()`
+   explícito, el cambio se pierde al cerrar `bench console` sin una salida
+   limpia** (el heredoc cierra stdin, lo que no dispara el commit
+   automático de fin de request que sí ocurre en una sesión HTTP normal).
+   La primera ejecución del script mostró el API Key/Secret en pantalla
+   pero, al reconectar en una sesión nueva, `api_key`/`api_secret` estaban
+   `NULL` en la base: el cambio nunca se persistió. **Ajuste**: el script
+   llama a `frappe.db.commit()` inmediatamente después de `generate_keys()`,
+   antes de leer `user.api_key` para imprimirlo. Verificado empíricamente:
+   tras el ajuste, una sesión nueva de `bench console` confirma el mismo
+   `api_key` en `tabUser`, y una llamada real a
+   `GET /api/resource/Supplier` con `Authorization: token <key>:<secret>`
+   devuelve `200 OK`.
+
+Ninguna desviación afectó la sintaxis de `CHANGE MASTER TO ...
+MASTER_USE_GTID=slave_pos` ni de `SHOW SLAVE STATUS`: ambas funcionaron tal
+como se documentó arriba contra MariaDB 10.6, sin ajustes. Al iniciar la
+réplica por primera vez, `Seconds_Behind_Master` reportó un valor alto
+(cientos de segundos) mientras aplicaba el backlog completo de binlog
+generado durante la instalación de ERPNext y la carga de datos ficticios;
+esto es el comportamiento esperado de una réplica que arranca después de
+que el primario ya generó binlog, no un error, y bajó a `0` en menos de un
+minuto una vez que el hilo SQL alcanzó al primario.

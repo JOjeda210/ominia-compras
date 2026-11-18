@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.3.5</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.omnia</groupId>
+  <artifactId>compras-backend</artifactId>
+  <version>0.1.0</version>
+  <name>compras-backend</name>
+  <description>
+    Backend Spring Boot que conecta la app offline-first de compras con la
+    API REST de ERPNext (Purchase Order, Purchase Receipt, catalogos).
+  </description>
+  <packaging>jar</packaging>
+
+  <properties>
+    <java.version>21</java.version>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- Apache HttpClient5 backs ErpNextClient instead of the JDK's java.net.http.HttpClient, because the JDK client refuses to let
+         application code set the "Host" header (it is on its hard-coded restricted-header list), which this integration needs to
+         target a specific Frappe site behind infra's single-port reverse proxy (ERPNEXT_SITE_HOST, e.g. multi-tenant "lab" site). -->
+    <dependency>
+      <groupId>org.apache.httpcomponents.client5</groupId>
+      <artifactId>httpclient5</artifactId>
+    </dependency>
+
+    <!-- Spring Boot does NOT read .env files on its own; this auto-registers backend/.env as a low-priority PropertySource
+         (real OS/container environment variables still win) so ERPNEXT_* and BACKEND_PORT load without manual `export`/`$env:` steps
+         for `./mvnw spring-boot:run` (quickstart.md). "optional" is intentional here (Maven's equivalent of Gradle's
+         developmentOnly): it is excluded from the packaged executable jar, so Docker/production always relies on real
+         environment variables (docker-compose), never on a .env file baked into or mounted in the image. -->
+    <dependency>
+      <groupId>me.paulschwarz</groupId>
+      <artifactId>springboot3-dotenv</artifactId>
+      <version>5.1.0</version>
+      <optional>true</optional>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>compras-backend</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

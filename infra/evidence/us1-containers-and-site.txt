@@ -1,0 +1,16 @@
+=== docker compose ps (US1 evidence) ===
+Timestamp: 2026-11-17T23:52:10Z
+NAME                        IMAGE                     COMMAND                  SERVICE           CREATED          STATUS                    PORTS
+omnia-erpnext-backend       frappe/erpnext:v15.47.0   "/home/frappe/frappe…"   backend           28 minutes ago   Up 26 minutes             
+omnia-erpnext-frontend      frappe/erpnext:v15.47.0   "nginx-entrypoint.sh"    frontend          28 minutes ago   Up 26 minutes             0.0.0.0:8080->8080/tcp, [::]:8080->8080/tcp
+omnia-erpnext-queue-long    frappe/erpnext:v15.47.0   "bench worker --queu…"   queue-long        28 minutes ago   Up 26 minutes             
+omnia-erpnext-queue-short   frappe/erpnext:v15.47.0   "bench worker --queu…"   queue-short       28 minutes ago   Up 26 minutes             
+omnia-erpnext-scheduler     frappe/erpnext:v15.47.0   "bench schedule"         scheduler         28 minutes ago   Up 26 minutes             
+omnia-erpnext-websocket     frappe/erpnext:v15.47.0   "node /home/frappe/f…"   websocket         28 minutes ago   Up 26 minutes             
+omnia-mariadb-primary       mariadb:10.6              "docker-entrypoint.s…"   mariadb-primary   28 minutes ago   Up 28 minutes (healthy)   3306/tcp
+omnia-mariadb-replica       mariadb:10.6              "docker-entrypoint.s…"   mariadb-replica   28 minutes ago   Up 27 minutes (healthy)   3306/tcp
+omnia-redis-cache           redis:6.2-alpine          "docker-entrypoint.s…"   redis-cache       28 minutes ago   Up 28 minutes             6379/tcp
+omnia-redis-queue           redis:6.2-alpine          "docker-entrypoint.s…"   redis-queue       28 minutes ago   Up 28 minutes             6379/tcp
+
+=== ERPNext reachable on host (US1 evidence) ===
+HTTP_STATUS=200

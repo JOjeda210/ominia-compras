@@ -1,0 +1,6 @@
+=== check-replication.sh evidence ===
+Timestamp: 2026-11-17T23:50:33Z
+Slave_IO_Running: Yes
+Slave_SQL_Running: Yes
+Seconds_Behind_Master: 0
+REPLICATION_OK

@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: compras-backend
+
+server:
+  port: ${BACKEND_PORT:8080}
+
+# ERPNext credentials come exclusively from environment variables (backend/.env, never committed); see backend/.env.example.
+erpnext:
+  base-url: ${ERPNEXT_BASE_URL:http://localhost:8000}
+  # Optional: only needed for a multi-site ERPNext behind one reverse-proxy port (infra's frappe_docker lab), routed by the Host header.
+  site-host: ${ERPNEXT_SITE_HOST:}
+  api-key: ${ERPNEXT_API_KEY:}
+  api-secret: ${ERPNEXT_API_SECRET:}
+  # Purchase Order requires a Company; the demo only ever has one (spec.md Assumptions), so it is never user-supplied.
+  default-company: ${ERPNEXT_DEFAULT_COMPANY:}
+
+# Origins allowed to call /api/**; the frontend runs on a different port (Vite dev/preview), so the browser enforces CORS.
+app:
+  cors:
+    allowed-origins: ${FRONTEND_ORIGINS:http://localhost:5173,http://localhost:4173}

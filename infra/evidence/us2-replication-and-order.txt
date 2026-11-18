@@ -1,0 +1,16 @@
+=== US2 evidence: replication status + test order visible on replica ===
+Timestamp: 2026-11-17T23:51:51Z
+
+--- check-replication.sh ---
+Slave_IO_Running: Yes
+Slave_SQL_Running: Yes
+Seconds_Behind_Master: 0
+REPLICATION_OK
+
+--- Purchase Order on primary ---
+name	docstatus	supplier	transaction_date
+PUR-ORD-2026-00001	0	Proveedor Ficticio Uno	2026-11-18
+
+--- Purchase Order on replica (same folio) ---
+name	docstatus	supplier	transaction_date
+PUR-ORD-2026-00001	0	Proveedor Ficticio Uno	2026-11-18

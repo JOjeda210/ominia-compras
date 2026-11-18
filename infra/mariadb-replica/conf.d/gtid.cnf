@@ -1,0 +1,15 @@
+# GTID replication target configuration for the replica MariaDB instance.
+# server_id differs from the primary; log_bin lets this instance become a
+# usable primary itself after a future mirror switch (User Story 3).
+[mariadb]
+server_id = 2
+log_bin = mariadb-bin
+log_bin_index = mariadb-bin.index
+binlog_format = ROW
+relay_log = mariadb-relay-bin
+gtid_domain_id = 1
+gtid_strict_mode = ON
+# A replica never accepts direct writes while it is replicating; this is
+# independent of the read-only protection applied to a demoted primary
+# (User Story 3, handled separately once that phase is implemented).
+read_only = 1
