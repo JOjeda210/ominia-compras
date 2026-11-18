@@ -1,0 +1,44 @@
+=== US4 evidence: automatic daily backup, triggered by the scheduled mechanism itself ===
+
+IMPORTANT: this backup was NOT triggered by running `scripts/backup.sh` by
+hand. The permanent daily schedule lives in `scripts/backup-schedule.env`
+(default 02:30 UTC, outside simulated usage hours, FR-008) and is polled
+every ~30s by `scripts/backup-cron-loop.sh`, running as the entrypoint of
+the `backup-cron` container (docker-compose.yml). To demonstrate the
+mechanism without waiting a full day, `backup-schedule.env` was edited to
+set BACKUP_HOUR=18 / BACKUP_MINUTE=25 (about 2 minutes ahead of real time)
+and then reset back to 02:30 UTC immediately after capturing this evidence.
+The `backup-cron` container itself detected the matching clock time and
+invoked `scripts/backup.sh` -- no different/manual command was run.
+
+--- docker compose logs backup-cron (container-local timestamps, UTC) ---
+[2026-11-18T18:22:26+00:00] Installing bash (one-time, on container start)...
+[2026-11-18T18:22:29+00:00] backup-cron loop started; reading schedule from /infra/scripts/backup-schedule.env every 30s
+[2026-11-18T18:25:29+00:00] Scheduled time reached (18:25 UTC); running backup.sh
+[2026-11-18T18:25:30+00:00] Running bench backup --with-files for site lab.localhost (active DB: mariadb-primary)
+Backup Summary for lab.localhost at 2026-11-18 23:55:34.341123
+Config  : ./lab.localhost/private/backups/20261118_235531-lab_localhost-site_config_backup.json 183.0B
+Database: ./lab.localhost/private/backups/20261118_235531-lab_localhost-database.sql.gz         1.1MiB
+Public  : ./lab.localhost/private/backups/20261118_235531-lab_localhost-files.tar               10.0KiB
+Private : ./lab.localhost/private/backups/20261118_235531-lab_localhost-private-files.tar       10.0KiB
+Backup for Site lab.localhost has been successfully completed with files
+BACKUP_OK: /infra/backups/2026-11-18_182529Z
+
+--- Resulting dated folder outside any container volume (infra/backups/, bind mount) ---
+infra/backups/2026-11-18_182529Z/
+  20261118_235531-lab_localhost-database.sql.gz          1,168,219 bytes
+  20261118_235531-lab_localhost-files.tar                   10,240 bytes
+  20261118_235531-lab_localhost-private-files.tar           10,240 bytes
+  20261118_235531-lab_localhost-site_config_backup.json         183 bytes
+  backup.log
+
+--- backup.log contents (no secrets; site_config_backup.json itself is NOT
+    reproduced here because it contains the site's internal MariaDB
+    password -- it stays only inside infra/backups/, which is git-ignored) ---
+generatedAt: 2026-11-18T18:25:36+00:00
+location: /infra/backups/2026-11-18_182529Z
+sourceInstance: mariadb-primary
+site: lab.localhost
+
+Schedule file reset to BACKUP_HOUR=02 / BACKUP_MINUTE=30 (UTC) immediately
+after this run, confirmed by re-reading scripts/backup-schedule.env.

@@ -1,0 +1,57 @@
+=== US5 evidence: restore of the automatic backup into a second Frappe site ===
+
+Backup restored: infra/backups/2026-11-18_182529Z/ (the SAME backup
+generated automatically by backup-cron, see us4-automatic-backup.txt --
+not a separate manual backup made just for this restore).
+
+--- Command ---
+$ bash scripts/restore.sh backups/2026-11-18_182529Z restore-test.localhost
+
+--- Key output (full output kept locally, no secrets in it) ---
+[1/3] Copying backup artifacts into the sites volume (container: backend)...
+ ... Copied (database.sql.gz, files.tar, private-files.tar)
+[2/3] Creating site restore-test.localhost in the same bench (skipped if it already exists; safe to re-run)...
+Installing frappe...
+Updating DocTypes for frappe : 100%
+*** Scheduler is disabled ***
+[3/3] Restoring database + public/private files into restore-test.localhost...
+App frappe already installed
+*** Scheduler is disabled ***
+Site restore-test.localhost has been restored with files
+RESTORE_OK: site restore-test.localhost restored from infra/backups/2026-11-18_182529Z
+
+--- Verification: order that already existed when the backup was generated,
+    queried inside the restored site via `bench --site restore-test.localhost
+    console` (same folio, same data as the primary/replica had at backup time) ---
+RESTORED_NAME=PUR-ORD-2026-00001
+RESTORED_SUPPLIER=Proveedor Ficticio Uno
+RESTORED_TRANSACTION_DATE=2026-11-18
+RESTORED_TOTAL=1000.0
+RESTORED_ITEM_CODE=ART-001
+
+Matches exactly what was observed on the primary BEFORE the mirror switch
+(see us3-mirror-switch.txt: supplier Proveedor Ficticio Uno, transaction_date
+2026-11-18).
+
+--- Negative check: the order created AFTER this backup was generated
+    (PUR-ORD-2026-00040, created during the US3 mirror-switch test) is
+    correctly ABSENT from the restored site, proving the restore reflects
+    exactly the state at backup time, not a leak from the live database ---
+HAS_PO_00040 (frappe.db.exists): None (falsy / not found)
+
+--- Resulting Frappe sites in this bench after the restore ---
+sites/lab.localhost          (original lab site, purpose=lab)
+sites/restore-test.localhost (new site created by restore.sh, purpose=restore-test)
+
+--- MSYS/Git Bash finding while building restore.sh (documented in research.md) ---
+`docker compose exec`/`cp` calls with a bare argv token starting with "/"
+get silently rewritten to a Windows path by Git Bash before reaching
+docker.exe (e.g. `mkdir -p /home/...` reports exit 0 but creates nothing,
+and even created a literal "C:" directory once inside the container).
+Fixed by: (a) wrapping any command that needs an absolute container path
+inside a single `bash -c "..."` string, and (b) always using an absolute,
+"backend:"-prefixed path as the destination of `docker compose cp` (a bare
+relative destination made `docker compose cp` fail immediately with
+"Could not find the file sites in container").
+
+Secrets note: no password, API key or db_password appears in this file.

@@ -22,6 +22,12 @@
 #   (so the administrator can open ERPNext in a browser).
 # - websocket / queue-short / queue-long / scheduler: background workers
 #   required by ERPNext (real-time updates, async jobs, scheduled tasks).
+# - backup-cron: auxiliary container that triggers scripts/backup.sh once a
+#   day (User Story 4). It is Docker-outside-of-Docker (mounts the host's
+#   docker.sock) so it can run the exact same `docker compose exec/cp`
+#   commands a human would run by hand, instead of re-implementing the
+#   backup logic for a second runtime. Local-lab trade-off documented in
+#   README.md: this container gets full control of the host Docker daemon.
 services:
   mariadb-primary:
     image: mariadb:${MARIADB_VERSION:-10.6}
@@ -292,6 +298,29 @@ services:
       # reachable from the host via `docker compose exec` (see
       # contracts/operational-checks.md), keeping the DB network private.
       - "${HTTP_PUBLISH_PORT:-8080}:8080"
+
+  backup-cron:
+    image: docker:27-cli
+    container_name: omnia-backup-cron
+    networks:
+      - erpnext-net
+    restart: unless-stopped
+    entrypoint:
+      - sh
+      - /infra/scripts/backup-cron-loop.sh
+    volumes:
+      # Docker socket: lets this container drive `docker compose exec/cp`
+      # against the sibling "backend" service (see services comment above).
+      - /var/run/docker.sock:/var/run/docker.sock
+      # The whole infra/ project directory, read-write: the loop reads
+      # scripts/backup-schedule.env and scripts/backup.sh, and backup.sh
+      # writes its dated output under backups/, both relative to this
+      # mount (basename "infra" matches the Compose project name so
+      # `docker compose exec` here resolves the same running containers).
+      - .:/infra
+    depends_on:
+      backend:
+        condition: service_started
 
 networks:
   erpnext-net:

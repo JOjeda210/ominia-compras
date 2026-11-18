@@ -166,3 +166,64 @@ generado durante la instalación de ERPNext y la carga de datos ficticios;
 esto es el comportamiento esperado de una réplica que arranca después de
 que el primario ya generó binlog, no un error, y bajó a `0` en menos de un
 minuto una vez que el hilo SQL alcanzó al primario.
+
+## Desviaciones encontradas al ejecutar el cambio al espejo y los respaldos (Fase 5)
+
+Dos desviaciones reales frente a lo previsto en este documento, encontradas
+ejecutando `switch-to-mirror.sh` y el mecanismo de respaldos contra la
+instancia real:
+
+1. **MariaDB no tiene la variable `super_read_only`**: el primer intento de
+   `switch-to-mirror.sh` ejecutó `SET GLOBAL super_read_only = 0/1` (y el
+   plan original de `gtid.cnf` iba a incluir esa misma línea), replicando el
+   mecanismo de MySQL. Contra `mariadb:10.6` esto falla en vivo con
+   `ERROR 1193 (HY000): Unknown system variable 'super_read_only'`: MariaDB
+   nunca implementó esa variable; su equivalente conceptual es el privilegio
+   por cuenta `READ_ONLY ADMIN` (introducido en 10.5.2), que decide quién
+   puede saltarse un `read_only=1` ya activo, en vez de una segunda bandera
+   global que bloquee a todos sin excepción. **Ajuste**: tanto
+   `infra/scripts/switch-to-mirror.sh` como el bloque añadido a
+   `infra/mariadb-primary/conf.d/gtid.cnf` usan únicamente `read_only=1`.
+   Esto es suficiente para FR-007 porque el usuario de MariaDB propio del
+   site de ERPNext no tiene ningún privilegio fuera de su propio esquema
+   (confirmado con `SHOW GRANTS FOR '<site_db_user>'@'%'`: solo
+   `ALL PRIVILEGES` sobre su propia base, nada global); verificado en vivo
+   intentando un `UPDATE` real contra el primario demovido con ese mismo
+   usuario, que fue rechazado con
+   `ERROR 1290 (HY000): The MariaDB server is running with the --read-only
+   option so it cannot execute this statement` (evidencia completa en
+   `infra/evidence/us3-mirror-switch.txt`).
+2. **`read_only=1` permanente en `mariadb-primary/conf.d/gtid.cnf` rompería
+   un despliegue limpio desde cero**: la sección anterior de este documento
+   (y `tasks.md` T015) describían ajustar ese archivo de forma estática y
+   permanente. Verificado en vivo que el usuario de MariaDB del site no
+   tiene privilegio `SUPER`/`READ_ONLY ADMIN`, por lo que si `read_only=1`
+   estuviera presente desde el primer arranque, `bench new-site
+   --install-app erpnext` fallaría al instalar ERPNext (ese paso escribe
+   usando las credenciales propias del site, no las de `root`), violando
+   FR-001/SC-001 para cualquier despliegue futuro desde cero. **Ajuste**:
+   `infra/mariadb-primary/conf.d/gtid.cnf` permanece limpio en el repositorio
+   para un despliegue nuevo; `switch-to-mirror.sh` es quien añade el bloque
+   `read_only=1` al archivo, en el momento real de la democión, no antes.
+   Esto cumple literalmente FR-007 ("al reiniciarse **después de una
+   democión**") sin sacrificar la reproducibilidad de un despliegue limpio.
+
+## Mecanismo de respaldos automáticos elegido (Fase 5)
+
+Se eligió un contenedor auxiliar nuevo (`backup-cron`, imagen `docker:27-cli`)
+en vez de `cron` del sistema anfitrión, para mantener todo dentro de Docker
+Compose y reproducible igual en cualquier máquina (Windows/Mac/Linux con
+Docker Desktop), en vez de depender de Task Scheduler/cron del host (que
+difiere por sistema operativo). Este contenedor monta el socket de Docker
+del host (`/var/run/docker.sock`) y el directorio `infra/` completo, y corre
+un bucle en `sh` (POSIX, sin dependencias) que cada ~30s compara la hora UTC
+actual contra `infra/scripts/backup-schedule.env` (por defecto `02:30` UTC,
+fuera del horario de uso simulado, decisión ya registrada arriba) y, al
+coincidir, invoca el mismo `infra/scripts/backup.sh` que se documenta como
+reproducible manualmente, vía `docker compose exec/cp` reales contra el
+servicio `backend` (no una reimplementación paralela de la lógica de
+respaldo). **Trade-off documentado**: este contenedor obtiene control total
+del daemon Docker del host vía el socket montado; aceptable para un
+laboratorio local de una sola máquina con datos ficticios (fuera de alcance
+cualquier arquitectura multi-host), no recomendable sin ajustes para un
+entorno de producción compartido.

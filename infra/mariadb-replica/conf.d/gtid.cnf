@@ -12,4 +12,4 @@ gtid_strict_mode = ON
 # A replica never accepts direct writes while it is replicating; this is
 # independent of the read-only protection applied to a demoted primary
 # (User Story 3, handled separately once that phase is implemented).
-read_only = 1
+# read_only = 1  # removed by switch-to-mirror.sh: this instance is now the active, writable database
