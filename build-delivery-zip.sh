@@ -16,11 +16,14 @@ rm -f "$OUTPUT_PATH"
 echo "Archiving tracked files from HEAD into $OUTPUT_NAME..."
 git archive --format=zip --output="$OUTPUT_PATH" HEAD
 
-# Evidencias.pdf is produced by the user from the screenshots this project generated/guided
-# (see docs/evidencias-guia.md); it is not committed to git, so it is appended here explicitly
-# with Python's zipfile module (no `zip` CLI available on this Windows/Git Bash setup).
+# Evidencias.pdf is normally committed once finalized, in which case git archive above
+# already included it -- only append it here (with Python's zipfile module; no `zip` CLI on
+# this Windows/Git Bash setup) when it exists locally but was never committed yet (e.g. a
+# freshly-regenerated version after taking the remaining manual screenshots).
 EVIDENCIAS_PDF="$REPO_ROOT/evidencias/Evidencias.pdf"
-if [ -f "$EVIDENCIAS_PDF" ]; then
+if git ls-files --error-unmatch evidencias/Evidencias.pdf > /dev/null 2>&1; then
+  echo "evidencias/Evidencias.pdf already committed; git archive included it, skipping re-add."
+elif [ -f "$EVIDENCIAS_PDF" ]; then
   python3 - "$OUTPUT_PATH" "$EVIDENCIAS_PDF" <<'PYEOF'
 import sys, zipfile
 zip_path, pdf_path = sys.argv[1], sys.argv[2]
