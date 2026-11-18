@@ -94,10 +94,41 @@ body {
 }
 
 .order-form,
-.order-detail {
+.order-detail,
+.receipt-form,
+.receipt-result {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.hint {
+  margin: 0;
+  color: #666;
+  font-size: 13px;
+}
+
+.receipt-form-lines {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.receipt-form-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.receipt-form-line input[type='number'] {
+  width: 6em;
+  flex: none;
 }
 
 .order-form-line {
@@ -108,6 +139,12 @@ body {
   border: 1px dashed var(--border);
   border-radius: 8px;
   padding: 8px;
+}
+
+/* Quantity and unit price are short numeric fields, keep them narrow instead of full-width */
+.order-form-line input[type='number'] {
+  width: 6em;
+  flex: none;
 }
 
 .order-form-actions,

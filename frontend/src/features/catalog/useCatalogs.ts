@@ -1,11 +1,17 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useState } from 'react';
-import { listCachedItems, listCachedSuppliers, refreshCatalogs } from '../../db/catalogRepository';
-import type { CatalogItem, CatalogSupplier } from '../../db/types';
+import {
+  listCachedItems,
+  listCachedSuppliers,
+  listCachedWarehouses,
+  refreshCatalogs,
+} from '../../db/catalogRepository';
+import type { CatalogItem, CatalogSupplier, CatalogWarehouse } from '../../db/types';
 
 export interface UseCatalogsResult {
   suppliers: CatalogSupplier[];
   items: CatalogItem[];
+  warehouses: CatalogWarehouse[];
   isDownloading: boolean;
   downloadError: string | null;
 }
@@ -17,6 +23,7 @@ export interface UseCatalogsResult {
 export function useCatalogs(): UseCatalogsResult {
   const suppliers = useLiveQuery(() => listCachedSuppliers(), [], []);
   const items = useLiveQuery(() => listCachedItems(), [], []);
+  const warehouses = useLiveQuery(() => listCachedWarehouses(), [], []);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -39,5 +46,11 @@ export function useCatalogs(): UseCatalogsResult {
     };
   }, []);
 
-  return { suppliers: suppliers ?? [], items: items ?? [], isDownloading, downloadError };
+  return {
+    suppliers: suppliers ?? [],
+    items: items ?? [],
+    warehouses: warehouses ?? [],
+    isDownloading,
+    downloadError,
+  };
 }

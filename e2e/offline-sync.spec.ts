@@ -14,10 +14,11 @@ async function stubCatalogEndpoints(page: Page): Promise<void> {
   await page.route('**/api/catalog/items', (route) => route.fulfill({ json: { items: [FAKE_ITEM] } }));
 }
 
-async function fillOrderForm(page: Page, quantity: string): Promise<void> {
+async function fillOrderForm(page: Page, quantity: string, unitPrice = '10'): Promise<void> {
   await page.getByTestId('supplier-select').selectOption(FAKE_SUPPLIER.erpnextName);
   await page.getByTestId('item-select').first().selectOption(FAKE_ITEM.erpnextName);
   await page.getByTestId('quantity-input').first().fill(quantity);
+  await page.getByTestId('unit-price-input').first().fill(unitPrice);
   await page.getByTestId('order-form-save').click();
 }
 
@@ -116,6 +117,7 @@ test.describe('Historia 2: sincronización automática', () => {
     await page.getByTestId('supplier-select').selectOption(supplierRef ?? '');
     await page.getByTestId('item-select').first().selectOption(itemRef ?? '');
     await page.getByTestId('quantity-input').first().fill('7');
+    await page.getByTestId('unit-price-input').first().fill('10');
     await page.getByTestId('order-form-save').click();
     await expect(page.getByTestId('order-status')).toContainText('Pendiente');
 

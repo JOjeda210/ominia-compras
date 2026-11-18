@@ -3,12 +3,18 @@ import type { CatalogItem, CatalogSupplier } from '../../db/types';
 import { es } from '../../i18n/es';
 import type { OrderLineInput } from '../../db/ordersRepository';
 
+// 'create': Historia 1, new local capture. 'editLocal': Historia 1, editing a capture that is
+// still only local (pending/failed). 'editSynced': Historia 3, editing a draft that already has
+// an ERPNext folio -- same form, but the supplier is locked (PUT does not support changing it)
+// and onSubmit talks directly to the backend instead of just writing to Dexie.
+type OrderFormMode = 'create' | 'editLocal' | 'editSynced';
+
 interface OrderFormProps {
   suppliers: CatalogSupplier[];
   items: CatalogItem[];
   initialSupplierRef?: string;
   initialLines?: OrderLineInput[];
-  isEdit: boolean;
+  mode: OrderFormMode;
   onSubmit: (supplierRef: string, lines: OrderLineInput[]) => Promise<void>;
   onCancel: () => void;
 }
@@ -17,10 +23,11 @@ interface DraftLine {
   key: string;
   itemRef: string;
   quantity: string;
+  unitPrice: string;
 }
 
 function createEmptyLine(): DraftLine {
-  return { key: crypto.randomUUID(), itemRef: '', quantity: '' };
+  return { key: crypto.randomUUID(), itemRef: '', quantity: '', unitPrice: '' };
 }
 
 function toDraftLines(lines: OrderLineInput[] | undefined): DraftLine[] {
@@ -29,6 +36,7 @@ function toDraftLines(lines: OrderLineInput[] | undefined): DraftLine[] {
     key: crypto.randomUUID(),
     itemRef: line.itemRef,
     quantity: String(line.quantity),
+    unitPrice: String(line.unitPrice),
   }));
 }
 
@@ -40,7 +48,7 @@ export function OrderForm({
   items,
   initialSupplierRef,
   initialLines,
-  isEdit,
+  mode,
   onSubmit,
   onCancel,
 }: OrderFormProps) {
@@ -81,7 +89,12 @@ export function OrderForm({
         setError(es.orderForm.validation.quantityPositive);
         return null;
       }
-      parsedLines.push({ itemRef: line.itemRef, quantity });
+      const unitPrice = Number(line.unitPrice);
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+        setError(es.orderForm.validation.unitPricePositive);
+        return null;
+      }
+      parsedLines.push({ itemRef: line.itemRef, quantity, unitPrice });
     }
     return parsedLines;
   }
@@ -94,14 +107,26 @@ export function OrderForm({
     setIsSaving(true);
     try {
       await onSubmit(supplierRef, parsedLines);
+    } catch (submitError) {
+      // Only the 'editSynced' path can reach a real backend call that rejects (e.g. ERPNext
+      // unreachable); 'create'/'editLocal' only ever write to Dexie and never throw here.
+      setError(submitError instanceof Error ? submitError.message : es.errors.generic);
     } finally {
       setIsSaving(false);
     }
   }
 
+  const supplierLocked = mode === 'editSynced';
+  const title =
+    mode === 'create'
+      ? es.orderForm.titleCreate
+      : mode === 'editSynced'
+        ? es.orderForm.titleEditSynced
+        : es.orderForm.titleEditLocal;
+
   return (
     <form className="order-form" onSubmit={handleSubmit} data-testid="order-form">
-      <h1>{isEdit ? es.orderForm.titleEdit : es.orderForm.titleCreate}</h1>
+      <h1>{title}</h1>
 
       {suppliers.length === 0 && items.length === 0 && (
         <p className="warning" data-testid="no-catalog-warning">
@@ -114,6 +139,7 @@ export function OrderForm({
         id="order-form-supplier"
         data-testid="supplier-select"
         value={supplierRef}
+        disabled={supplierLocked}
         onChange={(event) => setSupplierRef(event.target.value)}
       >
         <option value="">{es.orderForm.supplierPlaceholder}</option>
@@ -123,6 +149,7 @@ export function OrderForm({
           </option>
         ))}
       </select>
+      {supplierLocked && <p className="hint">{es.orderForm.supplierLockedNote}</p>}
 
       <h2>{es.orderForm.itemsTitle}</h2>
       {lines.map((line, index) => (
@@ -151,6 +178,17 @@ export function OrderForm({
             step="any"
             value={line.quantity}
             onChange={(event) => updateLine(line.key, { quantity: event.target.value })}
+          />
+
+          <label htmlFor={`order-form-price-${line.key}`}>{es.orderForm.unitPriceLabel}</label>
+          <input
+            id={`order-form-price-${line.key}`}
+            data-testid="unit-price-input"
+            type="number"
+            min="0"
+            step="any"
+            value={line.unitPrice}
+            onChange={(event) => updateLine(line.key, { unitPrice: event.target.value })}
           />
 
           <button

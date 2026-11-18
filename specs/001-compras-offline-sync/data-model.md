@@ -27,6 +27,18 @@ Copia de solo lectura de un Item de ERPNext, descargada al dispositivo.
 | `isStockItem` | boolean | Si lleva control de inventario (relevante para recepción). |
 | `fetchedAt` | datetime | |
 
+## CatalogWarehouse
+
+Copia de solo lectura de un Warehouse no-grupo de ERPNext (FR-012; ver
+`research.md`, "Catálogo de almacenes" — excluye nodos de grupo del árbol,
+que ERPNext rechaza como destino de una transacción).
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| `erpnextName` | string | Clave primaria local. |
+| `warehouseName` | string | Nombre para mostrar. |
+| `fetchedAt` | datetime | |
+
 ## LocalPurchaseDocument
 
 Tabla única para órdenes de compra y recibos de compra locales,
@@ -79,5 +91,6 @@ Renglón embebido dentro de `LocalPurchaseDocument`.
 |---|---|---|
 | `itemRef` | string | `erpnextName` del `CatalogItem`. |
 | `quantity` | number | Cantidad solicitada (orden) o recibida (recibo). |
+| `unitPrice` | number | Solo para renglones de `purchase_order` (FR-017); precio unitario capturado por el usuario, nunca inferido. |
 | `warehouseRef` | string \| null | Solo para renglones de `purchase_receipt` (FR-012). |
 | `sourceOrderLineRef` | string \| null | Solo para renglones de `purchase_receipt`: referencia al renglón original de la orden (FR-013), necesaria para que ERPNext calcule saldo pendiente (FR-014, FR-015). |

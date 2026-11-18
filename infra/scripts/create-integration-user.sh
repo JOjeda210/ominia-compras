@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Creates (idempotently) the ERPNext integration user used later by
 # backend/ to call the REST API, with roles covering Supplier, Item,
-# Purchase Order and Purchase Receipt, and generates its API Key/Secret.
+# Purchase Order, Purchase Receipt, Warehouse and Company, and generates
+# its API Key/Secret.
 #
 # SECURITY: this script prints the API Key/Secret to stdout ONCE (Frappe
 # only returns the secret at generation time; it is stored hashed
@@ -39,8 +40,13 @@ else:
     user = frappe.get_doc("User", user_email)
 
 # Roles covering Supplier, Item, Purchase Order and Purchase Receipt.
+# "Purchase User" is added on top of "Purchase Manager"/"Stock Manager"
+# because, empirically (confirmed against this ERPNext version), neither
+# "Purchase Manager" nor "Stock Manager" appears in the standard DocPerm
+# list for Warehouse or Company, while "Purchase User" grants read on both
+# without widening write access beyond what "Purchase Manager" already has.
 existing_roles = {r.role for r in user.roles}
-for role in ["Purchase Manager", "Stock Manager"]:
+for role in ["Purchase Manager", "Stock Manager", "Purchase User"]:
     if role not in existing_roles:
         user.append("roles", {"role": role})
 user.save(ignore_permissions=True)

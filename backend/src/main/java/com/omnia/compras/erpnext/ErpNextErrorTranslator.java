@@ -2,6 +2,8 @@ package com.omnia.compras.erpnext;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -10,6 +12,8 @@ import java.util.Optional;
 // Translates raw ERPNext/Frappe failures into the stable {errorCode, message, erpnextDetail} contract (Principle V: errors comprensibles).
 @Component
 public class ErpNextErrorTranslator {
+
+    private static final Logger log = LoggerFactory.getLogger(ErpNextErrorTranslator.class);
 
     // Known Frappe exception types get a precise Spanish message; anything else falls back to a generic message per HTTP status.
     private static final Map<String, String> KNOWN_EXCEPTION_MESSAGES = Map.of(
@@ -27,6 +31,7 @@ public class ErpNextErrorTranslator {
     // Main entry point: never lets a raw ERPNext payload reach the frontend, but keeps the original detail for backend logs/debugging.
     public ErrorResponse translate(ErpNextApiException ex) {
         if (ex.httpStatus() == null) {
+            log.warn("ERPNext unreachable: {}", ex.getMessage());
             return new ErrorResponse(
                     "ERPNEXT_UNREACHABLE",
                     "No se pudo contactar a ERPNext. La operación se reintentará automáticamente cuando haya conexión.",
@@ -40,6 +45,10 @@ public class ErpNextErrorTranslator {
 
         String errorCode = errorCodeFor(status);
         String message = excType.flatMap(this::knownMessageFor).orElseGet(() -> genericMessageFor(status));
+        // The root cause only ever reaches the frontend as erpnextDetail, which the UI deliberately never
+        // renders (Principle V); logging it here is the only place a diagnosing admin can actually see it.
+        log.warn("ERPNext rejected a request: status={} errorCode={} excType={} detail={}",
+                status, errorCode, excType.orElse("unknown"), erpnextDetail);
         return new ErrorResponse(errorCode, message, erpnextDetail);
     }
 

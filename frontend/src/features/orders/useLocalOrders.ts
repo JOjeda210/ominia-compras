@@ -1,14 +1,21 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useCallback } from 'react';
 import {
+  applySyncedOrderEdit,
   createLocalOrder,
   discardLocalOrder,
   getLocalOrder,
   listLocalOrders,
+  setOrderErpnextStatus,
   updateLocalOrder,
   type OrderLineInput,
 } from '../../db/ordersRepository';
 import type { LocalPurchaseDocument } from '../../db/types';
+import {
+  cancelPurchaseOrder,
+  submitPurchaseOrder,
+  updatePurchaseOrder,
+} from '../../sync/backendClient';
 import { triggerImmediateSync } from '../../sync/syncQueue';
 
 // Reactive list driven by Dexie's liveQuery: it re-renders by itself whenever the sync queue
@@ -35,6 +42,12 @@ export interface OrderActions {
   create: (supplierRef: string, lines: OrderLineInput[]) => Promise<LocalPurchaseDocument>;
   update: (localId: string, supplierRef: string, lines: OrderLineInput[]) => Promise<void>;
   discard: (localId: string) => Promise<void>;
+  // Historia 3 (FR-009): edits an already-synced draft directly against ERPNext (PUT), bypassing
+  // the queue entirely -- unlike `update`, this only ever runs while online.
+  editSynced: (localId: string, erpnextName: string, idempotencyKey: string, lines: OrderLineInput[]) => Promise<void>;
+  // Historia 3 (FR-010/FR-011): presents/cancels a synced order; both are direct, one-shot calls.
+  submitOrder: (localId: string, erpnextName: string) => Promise<void>;
+  cancelOrder: (localId: string, erpnextName: string) => Promise<void>;
 }
 
 // Wraps the repository writes with an immediate sync nudge: if the app happens to be online
@@ -58,5 +71,33 @@ export function useOrderActions(): OrderActions {
     await discardLocalOrder(localId);
   }, []);
 
-  return { create, update, discard };
+  const editSynced = useCallback(
+    async (localId: string, erpnextName: string, idempotencyKey: string, lines: OrderLineInput[]) => {
+      await updatePurchaseOrder(
+        erpnextName,
+        idempotencyKey,
+        lines.map((line) => ({
+          itemRef: line.itemRef,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          warehouseRef: null,
+          sourceOrderLineRef: null,
+        })),
+      );
+      await applySyncedOrderEdit(localId, lines);
+    },
+    [],
+  );
+
+  const submitOrder = useCallback(async (localId: string, erpnextName: string) => {
+    const result = await submitPurchaseOrder(erpnextName);
+    await setOrderErpnextStatus(localId, result.status);
+  }, []);
+
+  const cancelOrder = useCallback(async (localId: string, erpnextName: string) => {
+    const result = await cancelPurchaseOrder(erpnextName);
+    await setOrderErpnextStatus(localId, result.status);
+  }, []);
+
+  return { create, update, discard, editSynced, submitOrder, cancelOrder };
 }

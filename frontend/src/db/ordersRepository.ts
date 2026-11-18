@@ -1,15 +1,18 @@
 import { db } from './schema';
-import type { LocalDocumentLine, LocalPurchaseDocument } from './types';
+import type { ErpNextStatus, LocalDocumentLine, LocalPurchaseDocument } from './types';
 
 export interface OrderLineInput {
   itemRef: string;
   quantity: number;
+  // Required for purchase orders (FR-017): without it ERPNext accepts the line at rate 0.
+  unitPrice: number;
 }
 
 function toLines(inputs: OrderLineInput[]): LocalDocumentLine[] {
   return inputs.map((line) => ({
     itemRef: line.itemRef,
     quantity: line.quantity,
+    unitPrice: line.unitPrice,
     warehouseRef: null,
     sourceOrderLineRef: null,
   }));
@@ -70,4 +73,41 @@ export async function updateLocalOrder(
 // explicit confirmation step before calling this.
 export async function discardLocalOrder(localId: string): Promise<void> {
   await db.localPurchaseDocuments.delete(localId);
+}
+
+// Applies a successful PUT /api/purchase-orders/{erpnextName} (Historia 3, FR-009): the folio
+// never changes, only the lines and updatedAt; erpnextStatus stays 'draft' since editing an
+// already-submitted/cancelled order is not offered by the UI.
+export async function applySyncedOrderEdit(
+  localId: string,
+  lines: OrderLineInput[],
+): Promise<void> {
+  await db.localPurchaseDocuments.update(localId, {
+    lines: toLines(lines),
+    errorMessage: null,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+// Reflects the ERPNext status reported by submit/cancel (FR-011); ERPNext is the source of
+// truth (Constitution Principle III), the local record is only updated after ERPNext confirms.
+export async function setOrderErpnextStatus(
+  localId: string,
+  erpnextStatus: ErpNextStatus,
+): Promise<void> {
+  await db.localPurchaseDocuments.update(localId, {
+    erpnextStatus,
+    errorMessage: null,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+// Persists the comprehensible message ERPNext/the backend returned for a blocked action (e.g.
+// a cancellation refused because of a linked receipt, FR-011), reusing the same field the sync
+// queue uses for failed documents so OrderDetail only needs one error banner.
+export async function setOrderErrorMessage(
+  localId: string,
+  errorMessage: string | null,
+): Promise<void> {
+  await db.localPurchaseDocuments.update(localId, { errorMessage });
 }

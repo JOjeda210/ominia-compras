@@ -1,0 +1,52 @@
+=== Evidence: integration user read permission fix for Warehouse/Company ===
+Timestamp: 2026-11-18T13:00:00Z (container restart of 2026-11-18, post Fase 4)
+
+--- Pre-check: Fiscal Year 2026 survived the restart (mariadb-primary volume) ---
+$ bench --site lab.localhost execute frappe.client.get_list --kwargs "{'doctype': 'Fiscal Year', 'fields': ['name', 'year_start_date', 'year_end_date']}"
+[{"name": "2026", "year_start_date": "2026-01-01", "year_end_date": "2026-12-31"}]
+
+--- Roles on integration@omnia-compras.local BEFORE fix ---
+ROLES= ['Purchase Manager', 'Stock Manager']
+
+--- Real DocPerm inspection (read=1 roles only, abridged) ---
+Warehouse -> Stock User, Item Manager, Sales User, Manufacturing User, Accounts User, Purchase User
+Company   -> System Manager, Sales User, Employee, Accounts User, Projects User, Accounts Manager, Stock User, Purchase User
+(neither "Purchase Manager" nor "Stock Manager" appears in either list)
+
+--- GET /api/resource/Warehouse BEFORE fix ---
+HTTP_STATUS:403
+{"exception":"frappe.exceptions.PermissionError", ..., "_error_message":"No permission for Warehouse"}
+
+--- GET /api/resource/Company BEFORE fix ---
+HTTP_STATUS:403
+{"exception":"frappe.exceptions.PermissionError", ..., "_error_message":"No permission for Company"}
+
+--- Fix applied: role "Purchase User" appended to integration@omnia-compras.local, frappe.db.commit() ---
+ROLES_AFTER= ['Purchase Manager', 'Stock Manager', 'Purchase User']
+
+--- Confirmed persisted in a brand-new bench console session ---
+ROLES_FRESH_SESSION= ['Purchase Manager', 'Purchase User', 'Stock Manager']
+
+--- GET /api/resource/Warehouse AFTER fix (real credentials used, not shown) ---
+HTTP_STATUS:200
+{"data":[{"name":"All Warehouses - OCD"},{"name":"Stores - OCD"},{"name":"Work In Progress - OCD"},{"name":"Finished Goods - OCD"},{"name":"Almacen Central - OCD"}]}
+
+--- GET /api/resource/Company AFTER fix ---
+HTTP_STATUS:200
+{"data":[{"name":"Omnia Compras Demo"}]}
+
+--- Sanity: Supplier still readable after the role change (no regression) ---
+HTTP_STATUS:200
+{"data":[{"name":"Proveedor Ficticio Uno"},{"name":"Proveedor Ficticio Dos"}]}
+
+--- Demo data integrity check after today's container restart ---
+Item (2 expected): ART-001 (Nos), ART-002 (Nos) -> present
+Company "Omnia Compras Demo": default_currency MXN, country Mexico -> present
+Warehouse "Almacen Central - OCD": company "Omnia Compras Demo", parent "All Warehouses - OCD" -> present
+
+Conclusion: mariadb-primary's volume preserved all state across today's
+container restart (Fiscal Year, Company, Suppliers, Items, Warehouse). The
+only real gap found was a role-permission gap on the integration user,
+fixed by adding the "Purchase User" role (not a custom DocPerm rule), and
+infra/scripts/create-integration-user.sh was updated so a from-scratch
+deployment already includes it.

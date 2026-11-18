@@ -37,6 +37,64 @@ public class PurchaseOrderService {
         return new CreationResult(toResponse(resolution.document()), resolution.recovered());
     }
 
+    // Implements FR-009: edits the same ERPNext document (same folio) in place; supplierRef is optional per the documented contract.
+    // The idempotencyKey on an edit is accepted for symmetry with create/receipt requests but is not re-checked here: PUT already
+    // targets a specific existing erpnextName, so there is no "create vs recover" ambiguity to resolve.
+    public PurchaseOrderResponse update(String erpnextName, UpdatePurchaseOrderRequest request) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (request.supplierRef() != null && !request.supplierRef().isBlank()) {
+            payload.put("supplier", request.supplierRef());
+        }
+        List<Map<String, Object>> items = new ArrayList<>();
+        String today = LocalDate.now().toString();
+        for (PurchaseOrderLineRequest line : request.lines()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("item_code", line.itemRef());
+            item.put("qty", line.quantity());
+            item.put("rate", line.unitPrice());
+            item.put("schedule_date", today);
+            items.add(item);
+        }
+        payload.put("items", items);
+        JsonNode updated = client.updateResource(DOCTYPE, erpnextName, payload);
+        return toResponse(unwrap(updated));
+    }
+
+    // Implements FR-010/FR-011 (submit side): drives docstatus 0 -> 1 via the generic resource PUT endpoint (confirmed against the
+    // real ERPNext instance, see research.md "Presentar y cancelar un Purchase Order"); ERPNext itself validates the transition.
+    public PurchaseOrderStatusResponse submit(String erpnextName) {
+        JsonNode updated = client.updateResource(DOCTYPE, erpnextName, Map.of("docstatus", 1));
+        return toStatusResponse(unwrap(updated));
+    }
+
+    // Implements FR-010/FR-011 (cancel side): drives docstatus 1 -> 2. ERPNext rejects this with LinkExistsError (-> 409
+    // ERPNEXT_CONFLICT via ErpNextErrorTranslator) when a Purchase Receipt is already linked to the order.
+    public PurchaseOrderStatusResponse cancel(String erpnextName) {
+        JsonNode updated = client.updateResource(DOCTYPE, erpnextName, Map.of("docstatus", 2));
+        return toStatusResponse(unwrap(updated));
+    }
+
+    // Fetches the current ERPNext document for a given folio; reused by PurchaseReceiptService to resolve PO item rows and balances.
+    public JsonNode getRawDocument(String erpnextName) {
+        return unwrap(client.getResource(DOCTYPE, erpnextName));
+    }
+
+    // Implements GET /api/purchase-orders/{erpnextName} (contracts/backend-api.md): lets the frontend refresh status/receivedQuantity
+    // without going through the idempotency create-or-recover path, which only applies to writes.
+    public PurchaseOrderResponse get(String erpnextName) {
+        return toResponse(getRawDocument(erpnextName));
+    }
+
+    // ERPNext wraps single-document responses as {"data": {...}}; every direct client call in this service goes through this.
+    private JsonNode unwrap(JsonNode wrapped) {
+        JsonNode data = wrapped.get("data");
+        return data != null ? data : wrapped;
+    }
+
+    private PurchaseOrderStatusResponse toStatusResponse(JsonNode doc) {
+        return new PurchaseOrderStatusResponse(doc.get("name").asText(), statusOf(doc));
+    }
+
     // Builds the ERPNext Purchase Order payload; schedule_date defaults to today because ERPNext requires it per item and the app does not capture it
     // (a pragmatic default not covered by research.md; confirmed necessary against the real ERPNext instance in Fase 3).
     // company is mandatory on Purchase Order; the demo lab only ever has one company (spec.md Assumptions), so it comes from
@@ -60,6 +118,8 @@ public class PurchaseOrderService {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("item_code", line.itemRef());
             item.put("qty", line.quantity());
+            // rate is required (FR-017): ERPNext accepts the line without it but silently values it at zero.
+            item.put("rate", line.unitPrice());
             item.put("schedule_date", today);
             items.add(item);
         }
@@ -76,6 +136,7 @@ public class PurchaseOrderService {
                 lines.add(new PurchaseOrderLineResponse(
                         item.get("item_code").asText(),
                         item.get("qty").asDouble(),
+                        item.has("rate") ? item.get("rate").asDouble() : 0,
                         item.has("received_qty") ? item.get("received_qty").asDouble() : 0));
             }
         }

@@ -24,4 +24,10 @@ public class CatalogController {
     public ItemsResponse items() {
         return new ItemsResponse(catalogService.listItems());
     }
+
+    // Backs the Warehouse catalog documented in contracts/backend-api.md; see CatalogService.listWarehouses for the is_group=0 filter.
+    @GetMapping("/warehouses")
+    public WarehousesResponse warehouses() {
+        return new WarehousesResponse(catalogService.listWarehouses());
+    }
 }

@@ -99,8 +99,15 @@ bash scripts/create-integration-user.sh
 ```
 
 Crea (idempotente) el usuario `integration@omnia-compras.local` con los
-roles `Purchase Manager` y `Stock Manager` (cubren Supplier, Item,
-Purchase Order y Purchase Receipt), y genera su API Key/Secret.
+roles `Purchase Manager`, `Stock Manager` y `Purchase User`, y genera su API
+Key/Secret. `Purchase Manager`/`Stock Manager` cubren Supplier, Item,
+Purchase Order y Purchase Receipt; `Purchase User` se agregó el 18 de
+noviembre porque, contra esta versión real de ERPNext, ni `Purchase
+Manager` ni `Stock Manager` tienen permiso de lectura de rol sobre
+`Warehouse` ni `Company` (confirmado con `403 PermissionError` en vivo),
+mientras que `Purchase User` sí lo tiene para ambos sin ampliar permisos de
+escritura. Ver el hallazgo completo, con evidencia antes/después, en
+`specs/001-compras-offline-sync/research.md`.
 
 **Seguridad**: el script imprime el API Key/Secret en la terminal una sola
 vez (Frappe solo devuelve el secreto en texto plano al generarlo; después

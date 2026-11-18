@@ -266,6 +266,9 @@ recupera el folio existente.
 - **FR-016**: El sistema DEBE traducir cualquier error devuelto por ERPNext
   a un mensaje comprensible para el usuario, preservando la causa original
   para fines de diagnóstico.
+- **FR-017**: El sistema DEBE capturar un precio unitario por renglón al
+  crear o editar una orden de compra, de forma que el valor total de la
+  orden en ERPNext refleje un costo real y no quede en cero.
 
 ### Key Entities *(include if feature involves data)*
 

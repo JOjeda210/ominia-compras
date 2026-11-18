@@ -8,6 +8,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 
 // Single point of contact with the ERPNext REST API; keeps the "Authorization: token key:secret" header out of every other class.
@@ -53,13 +54,28 @@ public class ErpNextClient {
 
     // Lists documents with an explicit field projection and no page limit; used for catalog reads (Supplier/Item) that must return every row.
     public JsonNode listResourceWithFields(String doctype, List<String> fields) {
+        return listResourceWithFields(doctype, fields, null);
+    }
+
+    // Same as above, plus an optional equality filter (e.g. is_group=0) so catalog endpoints can exclude tree
+    // group/placeholder nodes (Warehouse, Item Group, ...) that ERPNext itself rejects as transaction targets.
+    public JsonNode listResourceWithFields(String doctype, List<String> fields, Map<String, Object> equalityFilters) {
         String fieldsJson = "[" + fields.stream().map(f -> "\"" + f + "\"").reduce((a, b) -> a + "," + b).orElse("") + "]";
+        String filtersJson = equalityFilters == null ? null : equalityFilters.entrySet().stream()
+                .map(e -> "[\"%s\",\"=\",%s]".formatted(e.getKey(), e.getValue()))
+                .reduce((a, b) -> a + "," + b)
+                .map(body -> "[" + body + "]")
+                .orElse(null);
         return execute(() -> restClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/api/resource/{doctype}")
-                        .queryParam("fields", fieldsJson)
-                        .queryParam("limit_page_length", "0")
-                        .build(doctype))
+                .uri(uriBuilder -> {
+                    uriBuilder.path("/api/resource/{doctype}")
+                            .queryParam("fields", fieldsJson)
+                            .queryParam("limit_page_length", "0");
+                    if (filtersJson != null) {
+                        uriBuilder.queryParam("filters", filtersJson);
+                    }
+                    return uriBuilder.build(doctype);
+                })
                 .retrieve()
                 .body(JsonNode.class));
     }
@@ -68,6 +84,16 @@ public class ErpNextClient {
     public JsonNode createResource(String doctype, Object payload) {
         return execute(() -> restClient.post()
                 .uri("/api/resource/{doctype}", doctype)
+                .body(payload)
+                .retrieve()
+                .body(JsonNode.class));
+    }
+
+    // Updates fields on an existing document via the generic resource PUT endpoint; also the mechanism used to drive docstatus
+    // transitions (submit=1, cancel=2), confirmed empirically against the real ERPNext instance (see research.md).
+    public JsonNode updateResource(String doctype, String name, Object payload) {
+        return execute(() -> restClient.put()
+                .uri("/api/resource/{doctype}/{name}", doctype, name)
                 .body(payload)
                 .retrieve()
                 .body(JsonNode.class));

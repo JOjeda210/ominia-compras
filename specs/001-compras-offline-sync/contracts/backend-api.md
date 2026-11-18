@@ -61,6 +61,23 @@ Lista los artículos disponibles (respaldado por `GET /api/resource/Item`).
 }
 ```
 
+### `GET /api/catalog/warehouses`
+
+Lista los almacenes disponibles para registrar recibos (respaldado por
+`GET /api/resource/Warehouse`, filtrando `is_group=0`: ERPNext rechaza los
+nodos de grupo del árbol de almacenes como destino de una transacción —
+hallazgo de Fase 4, ver `research.md`). `spec.md` Assumptions garantiza al
+menos un almacén no-grupo para esta demo.
+
+**Response 200**:
+```json
+{
+  "warehouses": [
+    { "erpnextName": "WH-0001", "warehouseName": "Almacén Central" }
+  ]
+}
+```
+
 ## Órdenes de compra
 
 ### `POST /api/purchase-orders`
@@ -74,7 +91,7 @@ borrador en ERPNext. Implementa FR-005 a FR-008.
   "idempotencyKey": "b3f1c2a0-...-uuid",
   "supplierRef": "SUP-0001",
   "lines": [
-    { "itemRef": "ITEM-0001", "quantity": 10 }
+    { "itemRef": "ITEM-0001", "quantity": 10, "unitPrice": 15.5 }
   ]
 }
 ```
@@ -88,7 +105,7 @@ casos, FR-008):
   "status": "draft",
   "supplierRef": "SUP-0001",
   "lines": [
-    { "itemRef": "ITEM-0001", "quantity": 10, "receivedQuantity": 0 }
+    { "itemRef": "ITEM-0001", "quantity": 10, "unitPrice": 15.5, "receivedQuantity": 0 }
   ]
 }
 ```
@@ -106,7 +123,7 @@ Edita una orden ya existente en ERPNext (mismo folio). Implementa FR-009.
 {
   "idempotencyKey": "b3f1c2a0-...-uuid",
   "lines": [
-    { "itemRef": "ITEM-0001", "quantity": 12 }
+    { "itemRef": "ITEM-0001", "quantity": 12, "unitPrice": 15.5 }
   ]
 }
 ```

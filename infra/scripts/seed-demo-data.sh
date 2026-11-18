@@ -47,6 +47,22 @@ else:
     company = frappe.get_doc("Company", company_name)
 frappe.db.commit()
 
+# `company.insert()` already created the chart of accounts, but not the default-account
+# links a new Purchase Receipt needs under perpetual inventory (confirmed empirically in
+# Fase 4: without these, submit fails with "Please set default Stock Received But Not
+# Billed..."). The Setup Wizard sets these for you; this unattended lab must do it itself.
+if not company.cost_center:
+    company.create_default_cost_center()
+if not frappe.db.get_value("Company", company.name, "default_inventory_account"):
+    frappe.db.set_value("Company", company.name, {
+        "default_inventory_account": f"Stock In Hand - {company.abbr}",
+        "stock_received_but_not_billed": f"Stock Received But Not Billed - {company.abbr}",
+        "stock_adjustment_account": f"Stock Adjustment - {company.abbr}",
+        "round_off_account": f"Round Off - {company.abbr}",
+        "write_off_account": f"Write Off - {company.abbr}",
+    })
+frappe.db.commit()
+
 # A single fictitious warehouse under the company's default warehouse group.
 warehouse_name = f"Almacen Central - {company.abbr}"
 if not frappe.db.exists("Warehouse", warehouse_name):

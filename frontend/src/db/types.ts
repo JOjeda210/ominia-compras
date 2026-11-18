@@ -12,6 +12,8 @@ export type ErpNextStatus = 'draft' | 'submitted' | 'cancelled';
 export interface LocalDocumentLine {
   itemRef: string;
   quantity: number;
+  // Only used by purchase_order lines; null for purchase_receipt lines (FR-017).
+  unitPrice: number | null;
   // Only used by purchase_receipt lines; always null for purchase_order lines.
   warehouseRef: string | null;
   sourceOrderLineRef: string | null;
@@ -44,5 +46,14 @@ export interface CatalogItem {
   itemName: string;
   stockUom: string;
   isStockItem: boolean;
+  fetchedAt: string;
+}
+
+// Beyond the documented contract (backend-api.md only lists Supplier/Item): the backend added
+// GET /api/catalog/warehouses so the receipt form can reference a real Warehouse name instead
+// of a frontend-hardcoded guess (spec.md Assumptions: a single Warehouse exists for this demo).
+export interface CatalogWarehouse {
+  erpnextName: string;
+  warehouseName: string;
   fetchedAt: string;
 }

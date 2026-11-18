@@ -2,6 +2,8 @@ package com.omnia.compras.idempotency;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.omnia.compras.erpnext.ErpNextClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.Optional;
@@ -14,6 +16,7 @@ import java.util.function.Supplier;
 public class IdempotencyResolver {
 
     private static final String IDEMPOTENCY_FIELD = "custom_idempotency_key";
+    private static final Logger log = LoggerFactory.getLogger(IdempotencyResolver.class);
 
     private final ErpNextClient client;
 
@@ -36,6 +39,10 @@ public class IdempotencyResolver {
     public Resolution resolve(String doctype, String idempotencyKey, Supplier<JsonNode> createFn) {
         Optional<String> existingName = findExistingName(doctype, idempotencyKey);
         if (existingName.isPresent()) {
+            // Logs every recovery so a retried request is traceable in the backend's own logs, not just in
+            // the HTTP response the client happened to see (Principle VI: trazabilidad).
+            log.info("Recovered existing {} '{}' for idempotencyKey={}, skipping createResource",
+                    doctype, existingName.get(), idempotencyKey);
             return new Resolution(unwrapData(client.getResource(doctype, existingName.get())), true);
         }
         return new Resolution(unwrapData(createFn.get()), false);

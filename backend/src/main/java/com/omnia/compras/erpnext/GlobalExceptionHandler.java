@@ -1,5 +1,7 @@
 package com.omnia.compras.erpnext;
 
+import com.omnia.compras.purchasereceipt.PurchaseOrderLineNotFoundException;
+import com.omnia.compras.purchasereceipt.QuantityExceedsBalanceException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -22,6 +24,24 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleErpNextError(ErpNextApiException ex) {
         ErrorResponse error = translator.translate(ex);
         return ResponseEntity.status(statusFor(error.errorCode())).body(error);
+    }
+
+    // FR-015 edge case: caught before ERPNext is ever called, so the frontend gets the exact contract error code regardless of
+    // how ERPNext itself would have worded an over-receipt rejection.
+    @ExceptionHandler(QuantityExceedsBalanceException.class)
+    public ResponseEntity<ErrorResponse> handleQuantityExceedsBalance(QuantityExceedsBalanceException ex) {
+        String message = "No se puede recibir %s unidades de %s: el saldo pendiente de la orden es %s."
+                .formatted(ex.requestedQuantity(), ex.itemRef(), ex.pendingQuantity());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse("QUANTITY_EXCEEDS_BALANCE", message, ex.getMessage()));
+    }
+
+    // Client sent a purchaseOrderRef/itemRef pairing that does not exist on that order; a request data error, not an ERPNext failure.
+    @ExceptionHandler(PurchaseOrderLineNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePurchaseOrderLineNotFound(PurchaseOrderLineNotFoundException ex) {
+        return ResponseEntity.badRequest().body(new ErrorResponse(
+                "INVALID_REQUEST",
+                "El artículo indicado no corresponde a un renglón de la orden de compra referenciada.",
+                ex.getMessage()));
     }
 
     // Bean validation failures (e.g. missing supplierRef) never reach ERPNext at all, so they get their own stable code separate from ERPNEXT_*.

@@ -36,13 +36,18 @@ export const es = {
   },
   orderForm: {
     titleCreate: 'Nueva orden de compra',
-    titleEdit: 'Editar orden de compra',
+    // Distinct titles for the two kinds of edit (Historia 1 local draft vs. Historia 3 already
+    // synced draft): the user must always know which flow they are in before saving.
+    titleEditLocal: 'Editar captura local',
+    titleEditSynced: 'Editar borrador en ERPNext',
     supplierLabel: 'Proveedor',
     supplierPlaceholder: 'Selecciona un proveedor',
+    supplierLockedNote: 'El proveedor no se puede cambiar una vez que la orden está en ERPNext.',
     itemsTitle: 'Artículos',
     itemLabel: 'Artículo',
     itemPlaceholder: 'Selecciona un artículo',
     quantityLabel: 'Cantidad',
+    unitPriceLabel: 'Precio unitario',
     addLineButton: 'Agregar artículo',
     removeLineButton: 'Quitar',
     saveButton: 'Guardar',
@@ -53,6 +58,7 @@ export const es = {
       supplierRequired: 'Selecciona un proveedor.',
       atLeastOneLine: 'Agrega al menos un artículo.',
       quantityPositive: 'La cantidad debe ser mayor a cero.',
+      unitPricePositive: 'El precio unitario debe ser mayor a cero.',
       itemRequired: 'Selecciona un artículo para cada renglón.',
     },
   },
@@ -65,9 +71,19 @@ export const es = {
     updatedAtLabel: 'Última edición',
     errorLabel: 'Último error reportado',
     editButton: 'Editar',
+    editSyncedButton: 'Editar borrador en ERPNext',
     discardButton: 'Descartar',
+    submitButton: 'Presentar',
+    cancelOrderButton: 'Cancelar orden',
+    receiveButton: 'Registrar recibo',
     backButton: 'Volver al listado',
     notFound: 'Esta orden ya no existe en este dispositivo.',
+    savingAction: 'Guardando...',
+    balanceTitle: 'Saldo pendiente de recepción',
+    balanceLine: (itemRef: string, pendingQuantity: number) =>
+      `${itemRef}: ${pendingQuantity} unidad(es) pendiente(s)`,
+    receiptsTitle: 'Recibos registrados',
+    receiptsEmpty: 'Todavía no hay recibos registrados para esta orden.',
   },
   confirmDiscard: {
     title: 'Descartar esta captura',
@@ -75,6 +91,47 @@ export const es = {
       'Esta orden pendiente se eliminará de este dispositivo y no se enviará a ERPNext. Esta acción no se puede deshacer.',
     confirmButton: 'Sí, descartar',
     cancelButton: 'No, conservar',
+  },
+  confirmCancelOrder: {
+    title: 'Cancelar esta orden',
+    message:
+      'La orden ya está presentada en ERPNext. Cancelarla es una acción irreversible y puede ser rechazada si ya tiene un recibo vinculado.',
+    confirmButton: 'Sí, cancelar orden',
+    cancelButton: 'No, conservar',
+  },
+  receiptForm: {
+    title: 'Registrar recibo de compra',
+    notEligible: 'Esta orden no está presentada en ERPNext; todavía no se puede registrar un recibo.',
+    warehouseLabel: 'Almacén',
+    warehousePlaceholder: 'Selecciona un almacén',
+    warehouseHelp: 'Almacén donde se recibe la mercancía.',
+    orderedQuantityLabel: 'Cantidad ordenada',
+    pendingQuantityLabel: 'Pendiente',
+    receivedQuantityLabel: 'Cantidad a recibir',
+    saveButton: 'Registrar recibo',
+    cancelButton: 'Cancelar',
+    retryButton: 'Reintentar',
+    sending: 'Enviando recibo a ERPNext...',
+    validation: {
+      warehouseRequired: 'Indica el almacén donde se recibe la mercancía.',
+      atLeastOneQuantity: 'Captura la cantidad recibida de al menos un artículo.',
+      quantityNotNegative: 'La cantidad recibida no puede ser negativa.',
+      quantityExceedsBalance: (itemRef: string) =>
+        `La cantidad recibida de ${itemRef} supera el saldo pendiente conocido.`,
+    },
+  },
+  receiptResult: {
+    title: 'Recibo registrado',
+    folioLabel: 'Folio del recibo',
+    balanceTitle: 'Saldo pendiente actualizado de la orden',
+    backToOrderButton: 'Volver a la orden',
+    registerAnotherButton: 'Registrar otro recibo',
+  },
+  purchaseOrder: {
+    savingEditLocal: 'Guardando captura local...',
+    savingEditSynced: 'Actualizando el borrador en ERPNext...',
+    submitting: 'Presentando la orden en ERPNext...',
+    cancelling: 'Cancelando la orden en ERPNext...',
   },
   catalog: {
     downloading: 'Descargando catálogos de proveedores y artículos...',
@@ -88,5 +145,7 @@ export const es = {
     generic: 'Ocurrió un error inesperado. Vuelve a intentarlo.',
     erpnextUnreachable:
       'No se pudo contactar al servidor en este momento. La orden seguirá pendiente y se reintentará automáticamente al recuperar la conexión.',
+    actionUnreachable:
+      'No se pudo contactar al servidor en este momento. Vuelve a intentarlo cuando tengas conexión.',
   },
 } as const;

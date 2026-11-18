@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 // Reads read-only catalogs from ERPNext (Supplier/Item) so the frontend can download them once and capture orders fully offline afterward.
 @Service
@@ -42,5 +43,21 @@ public class CatalogService {
             }
         }
         return items;
+    }
+
+    // Not in the original contract: added so the receipt flow has a real warehouse name instead of a frontend-hardcoded guess;
+    // spec.md Assumptions guarantees a single Warehouse for this demo, so the list is expected to have exactly one entry.
+    // is_group=0 excludes tree group nodes (e.g. "All Warehouses - OCD"): ERPNext rejects those as a transaction
+    // warehouse with "Group node warehouse is not allowed to select for transactions" (confirmed empirically in Fase 4).
+    public List<WarehouseDto> listWarehouses() {
+        JsonNode data = client.listResourceWithFields(
+                "Warehouse", List.of("name", "warehouse_name"), Map.of("is_group", 0)).get("data");
+        List<WarehouseDto> warehouses = new ArrayList<>();
+        if (data != null && data.isArray()) {
+            for (JsonNode node : data) {
+                warehouses.add(new WarehouseDto(node.get("name").asText(), node.get("warehouse_name").asText()));
+            }
+        }
+        return warehouses;
     }
 }

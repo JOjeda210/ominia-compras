@@ -6,6 +6,7 @@ import { OrderDetail } from './features/orders/OrderDetail';
 import { OrderForm } from './features/orders/OrderForm';
 import { OrderList } from './features/orders/OrderList';
 import { useLocalOrder, useOrderActions } from './features/orders/useLocalOrders';
+import { ReceiptPage } from './features/receipts/ReceiptPage';
 import { es } from './i18n/es';
 import { startSyncQueue } from './sync/syncQueue';
 
@@ -13,16 +14,23 @@ type View =
   | { type: 'list' }
   | { type: 'detail'; localId: string }
   | { type: 'create' }
-  | { type: 'edit'; localId: string };
+  // Historia 1: editing a capture that only exists locally (pending/failed).
+  | { type: 'editLocal'; localId: string }
+  // Historia 3: editing a draft that already has an ERPNext folio (PUT, direct call).
+  | { type: 'editSynced'; localId: string }
+  // Historia 4/5: capturing a receipt against a submitted order.
+  | { type: 'receipt'; localId: string };
 
 // No router dependency: the app's navigation needs (list / create / edit / detail) are a
 // simple finite set of screens, and state is never persisted in the URL because the source of
 // truth is Dexie, not the current route.
 export default function App() {
   const [view, setView] = useState<View>({ type: 'list' });
-  const { suppliers, items, downloadError } = useCatalogs();
-  const { create, update, discard } = useOrderActions();
-  const editingOrder = useLocalOrder(view.type === 'edit' ? view.localId : undefined);
+  const { suppliers, items, warehouses, downloadError } = useCatalogs();
+  const { create, update, discard, editSynced } = useOrderActions();
+  const editingOrder = useLocalOrder(
+    view.type === 'editLocal' || view.type === 'editSynced' ? view.localId : undefined,
+  );
 
   // Starts the connectivity-driven queue processor once for the app's lifetime (FR-005).
   useEffect(() => startSyncQueue(), []);
@@ -38,6 +46,19 @@ export default function App() {
     lines: OrderLineInput[],
   ): Promise<void> {
     await update(localId, supplierRef, lines);
+    setView({ type: 'detail', localId });
+  }
+
+  // Historia 3: the form's supplier field is locked for this mode, but onSubmit still receives
+  // it for signature parity with handleCreate/handleUpdate -- it is simply ignored here since
+  // PUT /api/purchase-orders/{erpnextName} never changes the supplier.
+  async function handleUpdateSynced(
+    localId: string,
+    erpnextName: string,
+    idempotencyKey: string,
+    lines: OrderLineInput[],
+  ): Promise<void> {
+    await editSynced(localId, erpnextName, idempotencyKey, lines);
     setView({ type: 'detail', localId });
   }
 
@@ -72,31 +93,67 @@ export default function App() {
           <OrderForm
             suppliers={suppliers}
             items={items}
-            isEdit={false}
+            mode="create"
             onSubmit={handleCreate}
             onCancel={() => setView({ type: 'list' })}
           />
         )}
 
-        {view.type === 'edit' && editingOrder && (
+        {view.type === 'editLocal' && editingOrder && (
           <OrderForm
             suppliers={suppliers}
             items={items}
-            isEdit
+            mode="editLocal"
             initialSupplierRef={editingOrder.supplierRef ?? undefined}
             initialLines={editingOrder.lines.map((line) => ({
               itemRef: line.itemRef,
               quantity: line.quantity,
+              unitPrice: line.unitPrice ?? 0,
             }))}
             onSubmit={(supplierRef, lines) => handleUpdate(view.localId, supplierRef, lines)}
             onCancel={() => setView({ type: 'detail', localId: view.localId })}
           />
         )}
 
+        {view.type === 'editSynced' && editingOrder && editingOrder.erpnextName && (
+          <OrderForm
+            suppliers={suppliers}
+            items={items}
+            mode="editSynced"
+            initialSupplierRef={editingOrder.supplierRef ?? undefined}
+            initialLines={editingOrder.lines.map((line) => ({
+              itemRef: line.itemRef,
+              quantity: line.quantity,
+              unitPrice: line.unitPrice ?? 0,
+            }))}
+            onSubmit={(_supplierRef, lines) =>
+              handleUpdateSynced(
+                view.localId,
+                // Non-null asserted by the guard above; kept narrow instead of threading an
+                // optional type through handleUpdateSynced's signature.
+                editingOrder.erpnextName as string,
+                editingOrder.idempotencyKey,
+                lines,
+              )
+            }
+            onCancel={() => setView({ type: 'detail', localId: view.localId })}
+          />
+        )}
+
+        {view.type === 'receipt' && (
+          <ReceiptPage
+            orderLocalId={view.localId}
+            warehouses={warehouses}
+            onBack={() => setView({ type: 'detail', localId: view.localId })}
+          />
+        )}
+
         {view.type === 'detail' && (
           <OrderDetail
             localId={view.localId}
-            onEdit={() => setView({ type: 'edit', localId: view.localId })}
+            onEdit={() => setView({ type: 'editLocal', localId: view.localId })}
+            onEditSynced={() => setView({ type: 'editSynced', localId: view.localId })}
+            onReceive={() => setView({ type: 'receipt', localId: view.localId })}
             onDiscard={() => handleDiscard(view.localId)}
             onBack={() => setView({ type: 'list' })}
           />
