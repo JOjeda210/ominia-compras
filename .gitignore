@@ -29,3 +29,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Delivery ZIP built by build-delivery-zip.sh (regenerated on demand, not versioned)
+omnia-compras-entrega-*.zip

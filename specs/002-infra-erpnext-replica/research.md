@@ -227,3 +227,41 @@ del daemon Docker del host vía el socket montado; aceptable para un
 laboratorio local de una sola máquina con datos ficticios (fuera de alcance
 cualquier arquitectura multi-host), no recomendable sin ajustes para un
 entorno de producción compartido.
+
+## Colisión de numeración al revertir el cambio al espejo (Fase 6)
+
+**Hallazgo**: al revertir el cambio al espejo de Fase 5 (primario activo de
+nuevo, réplica re-sincronizada), el hilo SQL de la réplica se detuvo con
+`Duplicate entry 'PUR-ORD-2026-00040' for key 'PRIMARY'` (`Last_Errno:
+1062`). Causa real: mientras la réplica fue la base activa (Fase 5),
+ERPNext creó ahí una orden con folio `PUR-ORD-2026-00040` (numeración
+secuencial propia de esa instancia). Al volver el primario a ser el activo,
+su propio contador de numeración —independiente, nunca se enteró de lo que
+pasó en la réplica mientras estuvo de solo lectura— también llegó a
+`PUR-ORD-2026-00040` con un documento real distinto. Al reanudar la
+replicación primario→réplica, el evento de escritura del primario para ese
+mismo nombre chocó con la fila local ya existente en la réplica.
+
+**Por qué pasa**: el campo `name` de Purchase Order en ERPNext se genera
+por una serie de numeración (`tabSeries`) almacenada en la misma base de
+datos, no por un generador externo coordinado entre primario y réplica. Un
+cambio al espejo real dejado sin resincronizar expone exactamente este
+riesgo: cualquier documento nuevo creado en cada lado mientras estuvieron
+divergentes puede colisionar por nombre al reunificar.
+
+**Arreglo aplicado**: se comparó el contenido de ambas filas (`docstatus`,
+`supplier`, `creation`) para confirmar cuál era la versión "real" que debía
+prevalecer (la del primario, ya presentada) y se borró manualmente la fila
+local de la réplica (y su renglón hijo en `Purchase Order Item`) antes de
+reanudar el hilo SQL (`START SLAVE SQL_THREAD`). Verificado: replicación
+Yes/Yes 0s restaurada, y una orden nueva creada después (`PUR-ORD-2026-
+00041`) replicó limpio de punta a punta.
+
+**Alcance de la limitación**: este proyecto no implementa detección ni
+resolución automática de colisiones de numeración tras un cambio al espejo
+(fuera del alcance definido en `spec.md`: sin failover/failback automático).
+Un cambio al espejo real en producción necesitaría, antes de reanudar la
+replicación en sentido inverso, reconciliar o descartar explícitamente
+cualquier documento creado del lado que estuvo activo temporalmente — aquí
+se resolvió a mano porque los datos son ficticios y de un solo documento de
+prueba, no un mecanismo reproducible para datos reales.

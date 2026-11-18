@@ -8,16 +8,27 @@ despliegue reproducible (US1), réplica GTID verificada (US2), cambio al
 espejo ante caída del primario (US3), respaldos automáticos diarios (US4) y
 restauración verificable en un segundo site (US5).
 
-**Estado actual del laboratorio** (al cierre de la Fase 5): `mariadb-replica`
-quedó promovida como base de datos activa y escribible tras la prueba real
-de cambio al espejo (US3); ERPNext sigue apuntando a ella. El antiguo
-`mariadb-primary` está arriba, en modo solo lectura (`read_only=ON`), y no
-está reconfigurado como réplica de `mariadb-replica` (eso sería un
-"failback" con reconciliación de datos, fuera de alcance — ver
-"Out of Scope" en `spec.md`: no se exige failover/failback automático). El
-bench tiene 2 sites: `lab.localhost` (original) y `restore-test.localhost`
-(creado por `scripts/restore.sh` para verificar US5). Detalle completo en la
-sección "Cambio al espejo (US3)" más abajo.
+**Estado actual del laboratorio** (al cierre de la Fase 6): tras la prueba
+real de cambio al espejo de la Fase 5 (US3), el laboratorio se devolvió a
+operación normal para que la evidencia de "Contenedores activos"/"ERPNext
+en funcionamiento"/"Réplica GTID" del entregable final refleje el estado
+habitual, no un post-failover. `mariadb-primary` es de nuevo la base de
+datos activa y escribible (`read_only=OFF`); ERPNext (`backend` y el resto
+de procesos de la app) apunta otra vez a `mariadb-primary`;
+`mariadb-replica` volvió a replicar desde `mariadb-primary` vía GTID
+(`read_only=ON`, hilos `Slave_IO_Running`/`Slave_SQL_Running` en `Yes`/`Yes`,
+`Seconds_Behind_Master=0`). Procedimiento exacto, con salidas reales, en
+`infra/evidence/us6-rollback-to-primary.txt`. El bench tiene 2 sites:
+`lab.localhost` (original) y `restore-test.localhost` (creado por
+`scripts/restore.sh` para verificar US5). El cambio al espejo (US3) sigue
+siendo un procedimiento operativo reproducible a demanda — ver la sección
+"Cambio al espejo (US3)" más abajo — simplemente no se deja el laboratorio
+en ese estado de forma permanente. Nota: la orden ficticia
+`PUR-ORD-2026-00040`, creada solo en `mariadb-replica` durante la prueba de
+Fase 5 mientras el primario estaba detenido, sigue ausente en
+`mariadb-primary` (divergencia esperada y documentada, sin consecuencia —
+ver "Cambio al espejo (US3)"); no se intentó preservarla ni migrarla al
+revertir.
 
 ## Versiones exactas usadas
 
@@ -366,17 +377,20 @@ generar el respaldo, mas la confirmación de que el folio creado
 | `infra/evidence/us3-mirror-switch.txt` | Cambio al espejo real: folios antes/después, rechazo de escritura verificado contra el antiguo primario, divergencia documentada |
 | `infra/evidence/us4-automatic-backup.txt` | Logs reales del disparo automático de `backup-cron` (no manual) y el respaldo resultante |
 | `infra/evidence/us5-restore.txt` | Restauración real en `restore-test.localhost` y folio verificado con los mismos datos que al momento del respaldo |
+| `infra/evidence/us6-rollback-to-primary.txt` | Reversión real del cambio al espejo (Fase 6): `mariadb-primary` vuelve a ser escribible, `mariadb-replica` vuelve a replicar desde él, Yes/Yes/0 en el sentido original |
+| `infra/evidence/us6-restore-rerun-and-backup-check.txt` | Re-verificación en vivo (no solo lo guardado en Fase 5) del respaldo más reciente y de una restauración completa, para las Evidencias 5 y 6 del PDF |
 
 Ninguno de estos archivos contiene contraseñas ni API keys (los scripts que
 las usan nunca las imprimen en la salida que se guarda como evidencia).
 
 ## Mapa de arquitectura
 
-Estado reflejado abajo: **después** del cambio al espejo real de la Fase 5
-(ver "Estado actual del laboratorio" arriba). La flecha de replicación GTID
-y la de conexión de la app están invertidas respecto al diagrama original
-de la Fase 3: ahora `backend` (y el resto de procesos de la app) hablan con
-`mariadb-replica`, no con `mariadb-primary`.
+Estado reflejado abajo: operación normal (Fase 6), **después** de revertir
+el cambio al espejo real de la Fase 5 (ver "Estado actual del laboratorio"
+arriba y `infra/evidence/us6-rollback-to-primary.txt`). `backend` (y el
+resto de procesos de la app) vuelven a hablar con `mariadb-primary`, que es
+la fuente de la replicación GTID hacia `mariadb-replica` — el mismo sentido
+de flechas que al cierre de la Fase 3.
 
 ```
                          Host (Windows, Docker Desktop)
@@ -387,14 +401,14 @@ de la Fase 3: ahora `backend` (y el resto de procesos de la app) hablan con
 ┌─────────────────────────── red privada "omnia-erpnext-net" (bridge) ───────────────────────────┐
 │                                                                                                  │
 │   ┌────────────┐      ┌────────────┐      ┌────────────┐      ┌────────────┐                   │
-│   │  frontend  │─────▶│  backend   │      │ mariadb-   │◀─────│ mariadb-   │                    │
-│   │  (nginx)   │      │ (gunicorn) │─────▶│  primary   │  X    │  replica   │ (activa, escribible)│
-│   │ :8080→host │      │ db_host=   │      │ :3306      │ (replicación      │ :3306      │         │
-│   └─────┬──────┘      │  replica   │      │ read_only  │  GTID detenida    └─────┬──────┘         │
-│         │             └──────┬─────┘      │ =ON        │  tras el switch)        │ vol:           │
-│         ▼                    │            └─────┬──────┘                         │ mariadb-replica-│
-│   ┌────────────┐      ┌────────────┐             │ vol:                          │ data            │
-│   │ websocket  │      │ queue-short│             │ mariadb-primary-               ───────────────┤
+│   │  frontend  │─────▶│  backend   │      │ mariadb-   │─────▶│ mariadb-   │                    │
+│   │  (nginx)   │      │ (gunicorn) │─────▶│  primary   │ GTID  │  replica   │ (en espera,        │
+│   │ :8080→host │      │ db_host=   │      │ :3306      │ repl. │ :3306      │  read_only=ON)     │
+│   └─────┬──────┘      │  primary   │      │ read_only  │       └─────┬──────┘                   │
+│         │             └──────┬─────┘      │ =OFF       │             │ vol:                      │
+│         ▼                    │            └─────┬──────┘             │ mariadb-replica-          │
+│   ┌────────────┐      ┌────────────┐             │ vol:               data                       │
+│   │ websocket  │      │ queue-short│             │ mariadb-primary-   ───────────────────────────┤
 │   │            │      │ queue-long │             │ data (nunca compartido; FR-003)                │
 │   └────────────┘      │ scheduler  │             └─────────────────────────────────────────────────┤
 │                        └────────────┘                                                              │
@@ -419,20 +433,20 @@ de la Fase 3: ahora `backend` (y el resto de procesos de la app) hablan con
 - **mariadb-primary**: base de datos original de ERPNext (`server_id=1`,
   `infra/mariadb-primary/conf.d/gtid.cnf`). Imagen `mariadb:10.6`. Volumen
   dedicado `mariadb-primary-data`, nunca compartido. No publica puertos al
-  host. Tras el cambio al espejo real de la Fase 5 (US3), quedó demovido:
-  `read_only=ON`, sin recibir escrituras de la app (ver "Cambio al espejo
-  (US3)"); el bloque `read_only=1` en su `gtid.cnf` lo añadió
-  `switch-to-mirror.sh` en el momento de la democión, no está en el
-  repositorio por defecto (rompería un despliegue limpio, ver esa misma
-  sección).
-- **mariadb-replica**: copia que recibía los cambios del primario vía
+  host. Fue demovido durante la prueba real de cambio al espejo de la Fase 5
+  (US3) y revertido a su rol normal en la Fase 6 (ver "Estado actual del
+  laboratorio" arriba y `infra/evidence/us6-rollback-to-primary.txt`): es de
+  nuevo la base de datos activa y escribible (`read_only=OFF`), fuente de la
+  replicación GTID hacia `mariadb-replica`.
+- **mariadb-replica**: copia que recibe los cambios del primario vía
   replicación GTID (`server_id=2`,
   `infra/mariadb-replica/conf.d/gtid.cnf`). Imagen `mariadb:10.6`. Volumen
   dedicado `mariadb-replica-data`, nunca compartido con el primario.
-  Tampoco publica puertos al host. Tras el cambio al espejo real de la Fase
-  5, quedó **promovida**: `read_only=OFF`, replicación detenida
-  (`STOP SLAVE`), y es la base de datos activa y escribible que usa
-  ERPNext ahora mismo.
+  Tampoco publica puertos al host. Fue promovida durante la prueba real de
+  cambio al espejo de la Fase 5 y revertida a su rol normal en la Fase 6: de
+  nuevo en modo solo lectura (`read_only=ON`), replicando desde
+  `mariadb-primary` (`Slave_IO_Running`/`Slave_SQL_Running` en `Yes`/`Yes`,
+  `Seconds_Behind_Master=0`).
 - **redis-cache** / **redis-queue**: caché en memoria y cola de trabajos
   que todo proceso de Frappe/ERPNext necesita. Sin persistencia relevante
   salvo `redis-queue-data` (cola, para no perder jobs pendientes si el
@@ -448,8 +462,9 @@ de la Fase 3: ahora `backend` (y el resto de procesos de la app) hablan con
 - **backend**: servidor de aplicación (gunicorn) de Frappe/ERPNext; el
   único servicio que atiende peticiones HTTP/API contra la base de datos.
   Su destino (`db_host` en `sites/common_site_config.json`) es el que
-  `switch-to-mirror.sh` reconfigura; actualmente apunta a
-  `mariadb-replica:3306` (ver nota de estado al inicio de este documento).
+  `switch-to-mirror.sh` reconfigura durante un cambio al espejo; tras la
+  reversión de la Fase 6 vuelve a apuntar a `mariadb-primary:3306` (ver nota
+  de estado al inicio de este documento).
 - **backup-cron**: contenedor auxiliar (US4), imagen `docker:27-cli`, sin
   volumen propio de datos — monta el socket de Docker del host
   (`/var/run/docker.sock`) y el directorio `infra/` completo (bind mount,

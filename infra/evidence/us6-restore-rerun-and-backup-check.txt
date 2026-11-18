@@ -1,0 +1,51 @@
+=== Fase 6 evidence: re-verification, right now, of Evidencia 5 (respaldo
+    automatico) and Evidencia 6 (restauracion) for Evidencias.pdf, instead
+    of only relying on yesterday's saved files ===
+
+--- Evidencia 5: most recent backup, location + contents + date ---
+$ ls -la infra/backups/2026-11-18_182529Z/
+20261118_235531-lab_localhost-database.sql.gz          1,168,219 bytes
+20261118_235531-lab_localhost-files.tar                   10,240 bytes
+20261118_235531-lab_localhost-private-files.tar           10,240 bytes
+20261118_235531-lab_localhost-site_config_backup.json         183 bytes
+backup.log
+
+$ cat infra/backups/2026-11-18_182529Z/backup.log
+generatedAt: 2026-11-18T18:25:36+00:00
+location: /infra/backups/2026-11-18_182529Z
+sourceInstance: mariadb-primary
+site: lab.localhost
+files: (ls -la of the same 4 artifacts, shown above)
+
+This is the backup generated automatically by the backup-cron container's
+daily schedule (documented in full, with the container's own log lines
+proving no manual trigger was used, in
+infra/evidence/us4-automatic-backup.txt). Its location is
+infra/backups/2026-11-18_182529Z/, a host bind mount, outside any Docker
+volume and outside git (infra/backups/ is gitignored).
+
+--- Evidencia 6: restore re-run live (not just yesterday's saved output) ---
+$ bash scripts/restore.sh backups/2026-11-18_182529Z restore-test.localhost
+[1/3] Copying backup artifacts into the sites volume (container: backend)...
+ ... (3 files copied: database.sql.gz, files.tar, private-files.tar)
+[2/3] Creating site restore-test.localhost in the same bench (skipped if it already exists; safe to re-run)...
+Site restore-test.localhost already exists; reusing it (bench restore overwrites its data).
+[3/3] Restoring database + public/private files into restore-test.localhost...
+App frappe already installed
+*** Scheduler is disabled ***
+Site restore-test.localhost has been restored with files
+RESTORE_OK: site restore-test.localhost restored from infra/backups/2026-11-18_182529Z
+
+$ docker compose exec backend bench --site restore-test.localhost console
+>>> frappe.db.get_value("Purchase Order", "PUR-ORD-2026-00001",
+...     ["name", "docstatus", "supplier", "transaction_date"], as_dict=True)
+RESTORED_ORDER: {'name': 'PUR-ORD-2026-00001', 'docstatus': 0,
+  'supplier': 'Proveedor Ficticio Uno',
+  'transaction_date': datetime.date(2026, 11, 18)}
+
+Same folio, same data as on mariadb-primary/mariadb-replica right now (see
+us6-rollback-to-primary.txt) and as at backup time (see us5-restore.txt from
+Fase 5). Confirms the restore mechanism is reproducible on demand, not a
+one-time result.
+
+Secrets note: no password or API key appears in this file.

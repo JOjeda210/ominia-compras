@@ -1,0 +1,92 @@
+=== Fase 6 evidence: rollback from the Fase-5 mirror switch back to normal
+    operation (mariadb-primary writable and active again, mariadb-replica
+    following it), done BEFORE capturing the "normal operation" screenshots
+    (Evidencias 1-3) so those are not accidentally post-failover ===
+
+--- Starting point (inherited from Fase 5) ---
+mariadb-primary: read_only = ON (demoted), not replicating anything
+mariadb-replica: read_only = OFF (promoted, active, writable)
+backend db_host: mariadb-replica
+mariadb-replica SHOW SLAVE STATUS: Slave_IO_Running=No, Slave_SQL_Running=No
+  (stale pointer at the old, already-stopped mariadb-primary; error 2003
+  "Connection refused" from when the primary container was actually down)
+
+--- Step 1: re-enable mariadb-primary for writes (runtime) ---
+$ docker compose exec -T mariadb-primary mariadb -u root -p*** \
+    -e "SET GLOBAL read_only = 0; SHOW VARIABLES LIKE 'read_only';"
+Variable_name   Value
+read_only       OFF
+
+--- Step 2: stop the replica's stale slave thread, then re-run the same
+    setup-replication.sh used in US2 (idempotent: CREATE USER IF NOT EXISTS
+    + CHANGE MASTER TO + START SLAVE, primary -> replica, same repl_user) ---
+$ docker compose exec -T mariadb-replica mariadb -u root -p*** -e "STOP SLAVE;"
+$ bash scripts/setup-replication.sh
+Creating dedicated replication user on mariadb-primary...
+Pointing mariadb-replica at mariadb-primary via GTID...
+Replication configured. Run check-replication.sh to verify status.
+
+--- Step 3: restore the replica's read-only protection (its normal role
+    while replicating; independent of the promoted-replica state it had) ---
+$ docker compose exec -T mariadb-replica mariadb -u root -p*** \
+    -e "SET GLOBAL read_only = 1; SHOW VARIABLES LIKE 'read_only';"
+Variable_name   Value
+read_only       ON
+
+--- Step 4: repoint ERPNext at mariadb-primary again and restart the app
+    processes that hold a live DB connection (same mechanism switch-to-
+    mirror.sh used, run in reverse) ---
+$ docker compose exec -T backend bench set-config -g db_host mariadb-primary
+$ docker compose restart backend websocket queue-short queue-long scheduler
+(confirmed afterwards: sites/common_site_config.json -> db_host: mariadb-primary)
+
+--- Step 5: restore infra/mariadb-primary/conf.d/gtid.cnf and
+    infra/mariadb-replica/conf.d/gtid.cnf to their clean, pre-Fase-5 content
+    (git checkout 7b7f581 -- <both files>), so a future container restart
+    does not reintroduce the demotion/promotion from the Fase 5 test ---
+$ git diff HEAD --stat -- infra/mariadb-primary/conf.d/gtid.cnf infra/mariadb-replica/conf.d/gtid.cnf
+ infra/mariadb-primary/conf.d/gtid.cnf | 15 ---------------
+ infra/mariadb-replica/conf.d/gtid.cnf |  2 +-
+ 2 files changed, 1 insertion(+), 16 deletions(-)
+(removes the "read_only = 1" block added by switch-to-mirror.sh from the
+primary's file; restores the uncommented "read_only = 1" line in the
+replica's file)
+
+--- Verification: replication is back to Yes/Yes/0, in the ORIGINAL
+    direction (mariadb-primary -> mariadb-replica) ---
+$ bash scripts/check-replication.sh
+Slave_IO_Running: Yes
+Slave_SQL_Running: Yes
+Seconds_Behind_Master: 0
+REPLICATION_OK
+
+$ docker compose exec -T mariadb-replica mariadb -u root -p*** -e "SHOW SLAVE STATUS\G" | grep -E "Master_Host|Slave_IO_Running|Slave_SQL_Running|Seconds_Behind_Master"
+                   Master_Host: mariadb-primary
+              Slave_IO_Running: Yes
+             Slave_SQL_Running: Yes
+         Seconds_Behind_Master: 0
+
+--- Verification: roles are correct (primary writable, replica read-only) ---
+mariadb-primary read_only: OFF
+mariadb-replica read_only: ON
+
+--- Verification: ERPNext is reachable and serving the app through the
+    primary again ---
+$ curl -s -o /dev/null -w "HTTP_STATUS:%{http_code}\n" -H "Host: lab.localhost" http://localhost:8080/
+HTTP_STATUS:200
+
+--- Verification: the test order used throughout this project (same folio
+    on both instances again) ---
+mariadb-primary: PUR-ORD-2026-00001, docstatus 0, supplier Proveedor
+  Ficticio Uno, transaction_date 2026-11-18
+mariadb-replica: identical row
+
+--- Expected, documented divergence (per task instructions, not an error) ---
+PUR-ORD-2026-00040 (created only on the replica during the Fase 5 mirror
+switch, while the primary was stopped) is correctly ABSENT from
+mariadb-primary (empty SELECT, max folio on primary is PUR-ORD-2026-00039).
+This fictitious order was never meant to be preserved or migrated back.
+
+Secrets note: no password or API key appears in this file (shown as ***
+above; actual commands read MARIADB_ROOT_PASSWORD from infra/.env, never
+printed).
